@@ -48,8 +48,17 @@ export interface QCIssue {
   screen_name?: string | null;
 }
 
+export interface QCCheck {
+  code: string;
+  label: string;
+  passed: boolean;
+  severity: "info" | "warning" | "error";
+  message: string;
+}
+
 export interface QCResult {
   passed: boolean;
+  checks: QCCheck[];
   issues: QCIssue[];
 }
 
@@ -57,6 +66,9 @@ export interface Artifact {
   label: string;
   path: string;
   kind: string;
+  relative_path: string;
+  created_at: string;
+  size_bytes: number;
 }
 
 export interface GenerateResult {
@@ -65,7 +77,7 @@ export interface GenerateResult {
   qc: QCResult;
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
+export const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -95,6 +107,13 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   getQc: (projectId: number) => request<QCResult>(`/projects/${projectId}/qc`),
+  listArtifacts: (projectId: number) => request<Artifact[]>(`/projects/${projectId}/artifacts`),
   generate: (projectId: number) =>
     request<GenerateResult>(`/projects/${projectId}/generate`, { method: "POST" }),
+  packageZipUrl: (projectId: number) => `${API_BASE}/projects/${projectId}/package.zip`,
+  artifactDownloadUrl: (projectId: number, relativePath: string) =>
+    `${API_BASE}/projects/${projectId}/artifacts/${relativePath
+      .split("/")
+      .map((part) => encodeURIComponent(part))
+      .join("/")}`,
 };
