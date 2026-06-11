@@ -95,6 +95,28 @@ def screen_points(screen: ScreenCreate) -> list[tuple[int, int]]:
     ]
 
 
+def screen_bounds(screen: ScreenCreate) -> tuple[float, float, float, float]:
+    geometry = screen_geometry(screen)
+    if geometry is not None and not geometry.is_empty:
+        return geometry.bounds
+    return (screen.x, screen.y, screen.x + screen.width, screen.y + screen.height)
+
+
+def screen_display_dimensions(screen: ScreenCreate) -> tuple[int, int]:
+    min_x, min_y, max_x, max_y = screen_bounds(screen)
+    return max(0, int(round(max_x - min_x))), max(0, int(round(max_y - min_y)))
+
+
+def screen_size_text(screen: ScreenCreate) -> str:
+    width, height = screen_display_dimensions(screen)
+    return f"{width} x {height}"
+
+
+def screen_origin_text(screen: ScreenCreate) -> str:
+    min_x, min_y, _, _ = screen_bounds(screen)
+    return f"{int(round(min_x))}, {int(round(min_y))}"
+
+
 def safe_area_points(screen: ScreenCreate) -> list[tuple[int, int]]:
     geometry = screen_geometry(screen)
     if geometry is None or geometry.is_empty:
@@ -207,10 +229,10 @@ def write_screen_spec(project: ProjectCreate, screens: list[ScreenCreate], path:
     for screen in screens:
         if screen.surface_type == "polygon":
             point_text = " ".join(f"({x},{y})" for x, y in screen_points(screen))
-            size_text = f"polygon bounds {screen.width} x {screen.height}"
+            size_text = f"polygon bounds {screen_size_text(screen)}"
             origin_text = point_text
         else:
-            size_text = f"{screen.width} x {screen.height}"
+            size_text = screen_size_text(screen)
             origin_text = f"{screen.x}, {screen.y}"
         notes = screen.notes.replace("|", "/")
         lines.append(
@@ -274,8 +296,9 @@ def write_ae_jsx(project: ProjectCreate, screens: list[ScreenCreate], path: Path
     screen_lines = []
     for screen in screens:
         comp_name = f"SCREEN_{slugify(screen.screen_name).upper()}_PRECOMP"
-        width = screen.width or max(1, int(screen_geometry(screen).bounds[2] - screen_geometry(screen).bounds[0]))
-        height = screen.height or max(1, int(screen_geometry(screen).bounds[3] - screen_geometry(screen).bounds[1]))
+        width, height = screen_display_dimensions(screen)
+        width = max(1, width)
+        height = max(1, height)
         screen_lines.append(
             f'var {comp_name} = app.project.items.addComp("{comp_name}", {width}, {height}, 1, 30, {project.frame_rate});'
         )
@@ -316,8 +339,7 @@ app.endUndoGroup();
 def write_c4d_script(project: ProjectCreate, screens: list[ScreenCreate], path: Path) -> None:
     screen_defs = []
     for screen in screens:
-        geometry = screen_geometry(screen)
-        bounds = geometry.bounds if geometry is not None else (screen.x, screen.y, screen.x + screen.width, screen.y + screen.height)
+        bounds = screen_bounds(screen)
         width = int(bounds[2] - bounds[0])
         height = int(bounds[3] - bounds[1])
         center_x = int(bounds[0] + width / 2)
@@ -378,8 +400,10 @@ def write_delivery_spec(project: ProjectCreate, screens: list[ScreenCreate], pat
         "## Screen List",
     ]
     for screen in screens:
+        size_text = screen_size_text(screen)
+        origin_text = screen_origin_text(screen)
         lines.append(
-            f"- {screen.screen_name}: {screen.surface_type}, {screen.x},{screen.y}, {screen.width}x{screen.height}, safe area {screen.safe_area_ratio}"
+            f"- {screen.screen_name}: {screen.surface_type}, {origin_text}, {size_text}, safe area {screen.safe_area_ratio}"
         )
     lines.extend(
         [
@@ -405,7 +429,7 @@ def write_ae_readme(project: ProjectCreate, screens: list[ScreenCreate], path: P
         "",
         "## Screen Precomps",
     ]
-    lines.extend(f"- {screen.screen_name}: {screen.width} x {screen.height}" for screen in screens)
+    lines.extend(f"- {screen.screen_name}: {screen_size_text(screen)}" for screen in screens)
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -419,7 +443,7 @@ def write_c4d_readme(project: ProjectCreate, screens: list[ScreenCreate], path: 
         "",
         "## Screen Planes",
     ]
-    lines.extend(f"- {screen.screen_name}: {screen.surface_type}" for screen in screens)
+    lines.extend(f"- {screen.screen_name}: {screen.surface_type}, {screen_size_text(screen)}" for screen in screens)
     path.write_text("\n".join(lines), encoding="utf-8")
 
 

@@ -82,6 +82,29 @@ def test_qc_reports_even_bounds_overlap_and_missing_fields():
     assert result.passed is False
 
 
+def test_qc_allows_polygon_with_geometry_points_and_no_dimensions():
+    project = sample_project()
+    screens = [
+        ScreenCreate(
+            screen_name="Triangle Mask",
+            surface_type="polygon",
+            x=0,
+            y=0,
+            width=0,
+            height=0,
+            polygon_points=[[200, 100], [600, 140], [320, 520]],
+            safe_area_ratio=0.9,
+            notes="Imported from CAD outline.",
+        )
+    ]
+
+    result = run_qc(project, screens)
+
+    assert result.passed is True
+    assert result.issues == []
+    assert all(check.passed for check in result.checks if check.severity == "error")
+
+
 def test_generate_project_package_creates_required_artifacts(tmp_path: Path):
     artifacts = generate_project_package(
         project=sample_project(),
@@ -161,3 +184,35 @@ def test_generate_project_package_creates_required_artifacts(tmp_path: Path):
         "SAFE_AREA_RATIO_VALID",
         "OVERLAP_WARNINGS",
     }.issubset(check_codes)
+
+
+def test_generated_docs_use_polygon_geometry_bounds_when_dimensions_are_omitted(tmp_path: Path):
+    project = sample_project()
+    screens = [
+        ScreenCreate(
+            screen_name="Triangle Mask",
+            surface_type="polygon",
+            x=0,
+            y=0,
+            width=0,
+            height=0,
+            polygon_points=[[200, 100], [600, 140], [320, 520]],
+            safe_area_ratio=0.9,
+            notes="Imported from CAD outline.",
+        )
+    ]
+
+    generate_project_package(project=project, screens=screens, output_root=tmp_path)
+
+    output_root = tmp_path / "Demo_Stage"
+    files_to_check = [
+        output_root / "02_ScreenSpec" / "screen_spec.md",
+        output_root / "04_AE" / "README_AE.md",
+        output_root / "05_C4D" / "README_C4D.md",
+        output_root / "07_Onsite" / "delivery_spec.md",
+    ]
+    for path in files_to_check:
+        content = path.read_text(encoding="utf-8")
+        assert "Triangle Mask" in content
+        assert "400 x 420" in content
+        assert "0 x 0" not in content

@@ -69,13 +69,18 @@ def create_app(
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    def package_root_for(project: ProjectRecord) -> Path:
-        if project.output_path:
-            return Path(project.output_path)
-        return project_package_root(project, export_root)
+    def package_root_for(project: ProjectRecord) -> Path | None:
+        if not project.output_path:
+            return None
+        return Path(project.output_path)
 
     def existing_package_root_or_409(project: ProjectRecord) -> Path:
         package_root = package_root_for(project)
+        if package_root is None:
+            raise HTTPException(
+                status_code=409,
+                detail="Production package has not been generated yet.",
+            )
         if not package_root.exists():
             raise HTTPException(
                 status_code=409,
@@ -138,7 +143,10 @@ def create_app(
     @app.get("/projects/{project_id}/artifacts", response_model=list[Artifact])
     def project_artifacts(project_id: int) -> list[Artifact]:
         project = get_project_or_404(project_id)
-        return list_project_artifacts(package_root_for(project))
+        package_root = package_root_for(project)
+        if package_root is None:
+            return []
+        return list_project_artifacts(package_root)
 
     @app.get("/projects/{project_id}/artifacts/{relative_path:path}")
     def download_artifact(project_id: int, relative_path: str) -> FileResponse:

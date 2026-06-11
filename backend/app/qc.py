@@ -104,19 +104,19 @@ def run_qc(project: ProjectCreate, screens: list[ScreenCreate]) -> QCResult:
                 )
             )
 
-        dimensions_valid = screen.width > 0 and screen.height > 0
-        if not dimensions_valid:
+        rectangle_dimensions_valid = screen.surface_type != "rectangle" or (screen.width > 0 and screen.height > 0)
+        if not rectangle_dimensions_valid:
             screen_dimensions_valid = False
             issues.append(
                 QCIssue(
                     code="MISSING_FIELD",
                     severity="error",
-                    message="Screen dimensions must be positive.",
+                    message="Rectangle screen dimensions must be positive.",
                     screen_name=screen.screen_name or None,
                 )
             )
 
-        if screen.surface_type == "rectangle" and (screen.width % 2 or screen.height % 2):
+        if screen.surface_type == "rectangle" and rectangle_dimensions_valid and (screen.width % 2 or screen.height % 2):
             screen_dimensions_valid = False
             issues.append(
                 QCIssue(
@@ -211,7 +211,7 @@ def run_qc(project: ProjectCreate, screens: list[ScreenCreate]) -> QCResult:
         "Screen dimensions valid",
         screen_dimensions_valid,
         "error",
-        "Screen dimensions must be positive and rectangle dimensions must be even.",
+        "Rectangle dimensions must be positive and even; polygon dimensions may come from geometry.",
     )
     add_check(
         "SCREENS_INSIDE_CANVAS",

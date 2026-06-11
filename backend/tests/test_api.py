@@ -128,3 +128,23 @@ def test_qc_and_generation_routes(tmp_path: Path):
     assert "API_Demo/02_ScreenSpec/screen_spec.json" in names
     assert "API_Demo/06_Export/export_presets.json" in names
     assert "API_Demo/07_Onsite/playback_spec.md" in names
+
+
+def test_artifact_downloads_do_not_use_stale_same_slug_directory_before_generation(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = client.post("/projects", json=project_payload()).json()
+    client.post(f"/projects/{project['id']}/screens", json=screen_payload())
+
+    stale_root = tmp_path / "exports" / "API_Demo"
+    stale_artifact = stale_root / "01_Analysis" / "qc_report.md"
+    stale_artifact.parent.mkdir(parents=True)
+    stale_artifact.write_text("stale package", encoding="utf-8")
+
+    artifacts_response = client.get(f"/projects/{project['id']}/artifacts")
+    zip_response = client.get(f"/projects/{project['id']}/package.zip")
+    artifact_response = client.get(f"/projects/{project['id']}/artifacts/01_Analysis/qc_report.md")
+
+    assert artifacts_response.status_code == 200
+    assert artifacts_response.json() == []
+    assert zip_response.status_code == 409
+    assert artifact_response.status_code == 409
