@@ -148,3 +148,71 @@ def test_artifact_downloads_do_not_use_stale_same_slug_directory_before_generati
     assert artifacts_response.json() == []
     assert zip_response.status_code == 409
     assert artifact_response.status_code == 409
+
+
+def test_patch_screen_updates_rectangle_and_rejects_out_of_canvas(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = client.post("/projects", json=project_payload()).json()
+    screen = client.post(f"/projects/{project['id']}/screens", json=screen_payload()).json()
+
+    update_payload = {
+        **screen_payload(),
+        "x": 120,
+        "y": 140,
+        "width": 800,
+        "height": 480,
+        "notes": "Moved during calibration.",
+    }
+    update_response = client.patch(
+        f"/projects/{project['id']}/screens/{screen['id']}",
+        json=update_payload,
+    )
+
+    assert update_response.status_code == 200
+    updated = update_response.json()
+    assert updated["x"] == 120
+    assert updated["y"] == 140
+    assert updated["width"] == 800
+    assert updated["height"] == 480
+    assert updated["notes"] == "Moved during calibration."
+    assert client.get(f"/projects/{project['id']}/qc").json()["passed"] is True
+
+    invalid_response = client.patch(
+        f"/projects/{project['id']}/screens/{screen['id']}",
+        json={**update_payload, "x": 1800, "width": 300},
+    )
+
+    assert invalid_response.status_code == 400
+    persisted = client.get(f"/projects/{project['id']}/screens").json()[0]
+    assert persisted["x"] == 120
+    assert persisted["width"] == 800
+
+
+def test_patch_polygon_screen_without_dimensions_uses_points_for_qc(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = client.post("/projects", json=project_payload()).json()
+    polygon_payload = {
+        "screen_name": "Diamond Header",
+        "surface_type": "polygon",
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "polygon_points": [[1200, 100], [1500, 300], [1200, 500], [900, 300]],
+        "safe_area_ratio": 0.86,
+        "notes": "Irregular trim.",
+    }
+    screen = client.post(f"/projects/{project['id']}/screens", json=polygon_payload).json()
+
+    updated_points = [[1220, 120], [1520, 320], [1220, 520], [920, 320]]
+    update_response = client.patch(
+        f"/projects/{project['id']}/screens/{screen['id']}",
+        json={**polygon_payload, "polygon_points": updated_points},
+    )
+
+    assert update_response.status_code == 200
+    updated = update_response.json()
+    assert updated["width"] == 0
+    assert updated["height"] == 0
+    assert updated["polygon_points"] == updated_points
+    assert client.get(f"/projects/{project['id']}/qc").json()["passed"] is True

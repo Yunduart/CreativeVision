@@ -123,6 +123,44 @@ class Database:
             connection.commit()
             return self.get_screen(cursor.lastrowid)
 
+    def update_screen(self, project_id: int, screen_id: int, payload: ScreenCreate) -> ScreenRecord:
+        self.get_project(project_id)
+        current = self.get_screen(screen_id)
+        if current.project_id != project_id:
+            raise KeyError(f"Screen {screen_id} not found")
+
+        with self.connect() as connection:
+            connection.execute(
+                """
+                UPDATE screens
+                SET screen_name = ?,
+                    surface_type = ?,
+                    x = ?,
+                    y = ?,
+                    width = ?,
+                    height = ?,
+                    polygon_points = ?,
+                    safe_area_ratio = ?,
+                    notes = ?
+                WHERE id = ? AND project_id = ?
+                """,
+                (
+                    payload.screen_name,
+                    payload.surface_type,
+                    payload.x,
+                    payload.y,
+                    payload.width,
+                    payload.height,
+                    json.dumps(payload.polygon_points),
+                    payload.safe_area_ratio,
+                    payload.notes,
+                    screen_id,
+                    project_id,
+                ),
+            )
+            connection.commit()
+        return self.get_screen(screen_id)
+
     def get_screen(self, screen_id: int) -> ScreenRecord:
         with self.connect() as connection:
             row = connection.execute("SELECT * FROM screens WHERE id = ?", (screen_id,)).fetchone()

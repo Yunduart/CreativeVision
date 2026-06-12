@@ -63,6 +63,25 @@ export interface Copy {
   qcChecklist: string;
   screenSurfaceCount: (count: number) => string;
   safePrefix: string;
+  zoomIn: string;
+  zoomOut: string;
+  resetView: string;
+  fitCanvas: string;
+  exportPreviewPng: string;
+  showGrid: string;
+  showSafeArea: string;
+  showScreenNumbers: string;
+  showCoordinates: string;
+  showDimensions: string;
+  showLabels: string;
+  selectedScreen: string;
+  noScreenSelected: string;
+  origin: string;
+  dimensions: string;
+  polygonBounds: string;
+  saveEdits: string;
+  cancelEdits: string;
+  packageStale: string;
   loadingWorkspace: string;
   loadedProjects: (count: number) => string;
   loadProjectsFailed: string;
@@ -71,6 +90,8 @@ export interface Copy {
   createProjectFailed: string;
   addedScreen: (name: string) => string;
   addScreenFailed: string;
+  updatedScreen: (name: string) => string;
+  updateScreenFailed: string;
   generatedFiles: (count: number, path: string | null | undefined) => string;
   generationFailed: string;
   artifactLabels: Record<string, string>;
@@ -175,6 +196,25 @@ export function makeCopy(language: LanguageCode): Copy {
       qcChecklist: "\u8d28\u68c0\u6e05\u5355",
       screenSurfaceCount: (count) => `${count} \u4e2a\u5c4f\u5e55\u8868\u9762`,
       safePrefix: "\u5b89\u5168\u533a",
+      zoomIn: "\u653e\u5927",
+      zoomOut: "\u7f29\u5c0f",
+      resetView: "\u91cd\u7f6e\u89c6\u56fe",
+      fitCanvas: "\u9002\u914d\u753b\u5e03",
+      exportPreviewPng: "\u5bfc\u51fa\u9884\u89c8 PNG",
+      showGrid: "\u663e\u793a\u7f51\u683c",
+      showSafeArea: "\u663e\u793a\u5b89\u5168\u533a",
+      showScreenNumbers: "\u663e\u793a\u7f16\u53f7",
+      showCoordinates: "\u663e\u793a\u5750\u6807",
+      showDimensions: "\u663e\u793a\u5c3a\u5bf8",
+      showLabels: "\u663e\u793a\u6807\u7b7e",
+      selectedScreen: "\u9009\u4e2d\u5c4f\u5e55",
+      noScreenSelected: "\u9009\u62e9\u4e00\u4e2a\u5c4f\u5e55\u4ee5\u67e5\u770b\u548c\u4fdd\u5b58\u8c03\u6574\u3002",
+      origin: "\u539f\u70b9",
+      dimensions: "\u5c3a\u5bf8",
+      polygonBounds: "\u591a\u8fb9\u5f62\u8fb9\u754c",
+      saveEdits: "\u4fdd\u5b58\u8c03\u6574",
+      cancelEdits: "\u53d6\u6d88\u8c03\u6574",
+      packageStale: "\u5236\u4f5c\u5305\u5df2\u8fc7\u671f\uff0c\u8bf7\u91cd\u65b0\u751f\u6210\u3002",
       loadingWorkspace: "\u6b63\u5728\u52a0\u8f7d\u672c\u5730\u5de5\u4f5c\u533a...",
       loadedProjects: (count) => `\u5df2\u52a0\u8f7d ${count} \u4e2a\u9879\u76ee\u3002`,
       loadProjectsFailed: "\u52a0\u8f7d\u9879\u76ee\u5931\u8d25\u3002",
@@ -183,6 +223,8 @@ export function makeCopy(language: LanguageCode): Copy {
       createProjectFailed: "\u521b\u5efa\u9879\u76ee\u5931\u8d25\u3002",
       addedScreen: (name) => `\u5df2\u6dfb\u52a0\u5c4f\u5e55 ${name}\u3002`,
       addScreenFailed: "\u6dfb\u52a0\u5c4f\u5e55\u5931\u8d25\u3002",
+      updatedScreen: (name) => `\u5df2\u66f4\u65b0\u5c4f\u5e55 ${name}\u3002`,
+      updateScreenFailed: "\u66f4\u65b0\u5c4f\u5e55\u5931\u8d25\u3002",
       generatedFiles: (count, path) => `\u5df2\u751f\u6210 ${count} \u4e2a\u6587\u4ef6\u5230 ${path ?? "\u8f93\u51fa\u76ee\u5f55"}\u3002`,
       generationFailed: "\u751f\u6210\u5931\u8d25\u3002",
       artifactLabels: artifactLabelsZh,
@@ -246,6 +288,25 @@ export function makeCopy(language: LanguageCode): Copy {
     qcChecklist: "QC Checklist",
     screenSurfaceCount: (count) => `${count} screen surface${count === 1 ? "" : "s"}`,
     safePrefix: "safe",
+    zoomIn: "Zoom in",
+    zoomOut: "Zoom out",
+    resetView: "Reset view",
+    fitCanvas: "Fit canvas",
+    exportPreviewPng: "Export preview PNG",
+    showGrid: "Show grid",
+    showSafeArea: "Show safe area",
+    showScreenNumbers: "Show numbers",
+    showCoordinates: "Show coordinates",
+    showDimensions: "Show dimensions",
+    showLabels: "Show labels",
+    selectedScreen: "Selected screen",
+    noScreenSelected: "Select a screen to inspect and save adjustments.",
+    origin: "Origin",
+    dimensions: "Dimensions",
+    polygonBounds: "Polygon bounds",
+    saveEdits: "Save edits",
+    cancelEdits: "Cancel edits",
+    packageStale: "Production package is stale. Regenerate before delivery.",
     loadingWorkspace: "Loading local workspace...",
     loadedProjects: (count) => `Loaded ${count} project${count === 1 ? "" : "s"}.`,
     loadProjectsFailed: "Failed to load projects.",
@@ -254,6 +315,8 @@ export function makeCopy(language: LanguageCode): Copy {
     createProjectFailed: "Failed to create project.",
     addedScreen: (name) => `Added screen ${name}.`,
     addScreenFailed: "Failed to add screen.",
+    updatedScreen: (name) => `Updated screen ${name}.`,
+    updateScreenFailed: "Failed to update screen.",
     generatedFiles: (count, path) => `Generated ${count} files into ${path}.`,
     generationFailed: "Generation failed.",
     artifactLabels: artifactLabelsEn,
