@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
 import svgwrite
@@ -25,10 +26,62 @@ PROJECT_DIRS = [
     "08_Archive",
 ]
 
+ARTIFACT_DEFINITIONS = [
+    ("QC report", "01_Analysis/qc_report.md", "markdown"),
+    ("Screen spec", "02_ScreenSpec/screen_spec.md", "markdown"),
+    ("Screen spec JSON", "02_ScreenSpec/screen_spec.json", "json"),
+    ("Full pixel map", "03_PixelMap/project_pixelmap_full.png", "png"),
+    ("Numbered pixel map", "03_PixelMap/project_pixelmap_numbered.png", "png"),
+    ("Safe area pixel map", "03_PixelMap/project_pixelmap_safearea.png", "png"),
+    ("SVG mask", "03_PixelMap/project_pixelmap_mask.svg", "svg"),
+    ("Mapping JSON", "03_PixelMap/project_mapping.json", "json"),
+    ("AE README", "04_AE/README_AE.md", "markdown"),
+    ("AE JSX script", "04_AE/create_project.jsx", "jsx"),
+    ("C4D README", "05_C4D/README_C4D.md", "markdown"),
+    ("C4D Python script", "05_C4D/create_stage_scene.py", "python"),
+    ("Export presets", "06_Export/export_presets.json", "json"),
+    ("FFmpeg proxy commands", "06_Export/ffmpeg_proxy_commands.txt", "text"),
+    ("Delivery spec", "07_Onsite/delivery_spec.md", "markdown"),
+    ("Onsite runbook", "07_Onsite/onsite_runbook.md", "markdown"),
+    ("Playback spec", "07_Onsite/playback_spec.md", "markdown"),
+]
+
 
 def slugify(value: str) -> str:
     slug = re.sub(r"[^A-Za-z0-9]+", "_", value.strip()).strip("_")
     return slug or "Untitled_Project"
+
+
+def project_package_root(project: ProjectCreate, output_root: Path) -> Path:
+    return output_root / slugify(project.project_name)
+
+
+def artifact_from_file(label: str, path: Path, kind: str, package_root: Path) -> Artifact:
+    stat = path.stat()
+    created_at = datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat().replace("+00:00", "Z")
+    relative_path = path.relative_to(package_root).as_posix()
+    return Artifact(
+        label=label,
+        path=path.as_posix(),
+        kind=kind,
+        relative_path=relative_path,
+        created_at=created_at,
+        size_bytes=stat.st_size,
+    )
+
+
+def expected_artifact_paths(package_root: Path) -> list[tuple[str, Path, str]]:
+    return [(label, package_root / relative_path, kind) for label, relative_path, kind in ARTIFACT_DEFINITIONS]
+
+
+def list_project_artifacts(package_root: Path) -> list[Artifact]:
+    if not package_root.exists():
+        return []
+    artifacts: list[Artifact] = []
+    for label, path, kind in expected_artifact_paths(package_root):
+        if path.is_file():
+            artifacts.append(artifact_from_file(label, path, kind, package_root))
+    return artifacts
 
 
 def screen_points(screen: ScreenCreate) -> list[tuple[int, int]]:
@@ -40,6 +93,28 @@ def screen_points(screen: ScreenCreate) -> list[tuple[int, int]]:
         (screen.x + screen.width, screen.y + screen.height),
         (screen.x, screen.y + screen.height),
     ]
+
+
+def screen_bounds(screen: ScreenCreate) -> tuple[float, float, float, float]:
+    geometry = screen_geometry(screen)
+    if geometry is not None and not geometry.is_empty:
+        return geometry.bounds
+    return (screen.x, screen.y, screen.x + screen.width, screen.y + screen.height)
+
+
+def screen_display_dimensions(screen: ScreenCreate) -> tuple[int, int]:
+    min_x, min_y, max_x, max_y = screen_bounds(screen)
+    return max(0, int(round(max_x - min_x))), max(0, int(round(max_y - min_y)))
+
+
+def screen_size_text(screen: ScreenCreate) -> str:
+    width, height = screen_display_dimensions(screen)
+    return f"{width} x {height}"
+
+
+def screen_origin_text(screen: ScreenCreate) -> str:
+    min_x, min_y, _, _ = screen_bounds(screen)
+    return f"{int(round(min_x))}, {int(round(min_y))}"
 
 
 def safe_area_points(screen: ScreenCreate) -> list[tuple[int, int]]:
@@ -154,16 +229,43 @@ def write_screen_spec(project: ProjectCreate, screens: list[ScreenCreate], path:
     for screen in screens:
         if screen.surface_type == "polygon":
             point_text = " ".join(f"({x},{y})" for x, y in screen_points(screen))
-            size_text = f"polygon bounds {screen.width} x {screen.height}"
+            size_text = f"polygon bounds {screen_size_text(screen)}"
             origin_text = point_text
         else:
-            size_text = f"{screen.width} x {screen.height}"
+            size_text = screen_size_text(screen)
             origin_text = f"{screen.x}, {screen.y}"
         notes = screen.notes.replace("|", "/")
         lines.append(
             f"| {screen.screen_name} | {screen.surface_type} | {origin_text} | {size_text} | {screen.safe_area_ratio} | {notes} |"
         )
     path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def write_screen_spec_json(project: ProjectCreate, screens: list[ScreenCreate], path: Path) -> None:
+    payload = {
+        "project_name": project.project_name,
+        "client_name": project.client_name,
+        "output_width": project.output_width,
+        "output_height": project.output_height,
+        "frame_rate": project.frame_rate,
+        "playback_software": project.playback_software,
+        "codec_requirement": project.codec_requirement,
+        "screens": [
+            {
+                "screen_name": screen.screen_name,
+                "surface_type": screen.surface_type,
+                "x": screen.x,
+                "y": screen.y,
+                "width": screen.width,
+                "height": screen.height,
+                "polygon_points": screen.polygon_points,
+                "safe_area_ratio": screen.safe_area_ratio,
+                "notes": screen.notes,
+            }
+            for screen in screens
+        ],
+    }
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def write_qc_report(project: ProjectCreate, screens: list[ScreenCreate], path: Path) -> None:
@@ -194,8 +296,9 @@ def write_ae_jsx(project: ProjectCreate, screens: list[ScreenCreate], path: Path
     screen_lines = []
     for screen in screens:
         comp_name = f"SCREEN_{slugify(screen.screen_name).upper()}_PRECOMP"
-        width = screen.width or max(1, int(screen_geometry(screen).bounds[2] - screen_geometry(screen).bounds[0]))
-        height = screen.height or max(1, int(screen_geometry(screen).bounds[3] - screen_geometry(screen).bounds[1]))
+        width, height = screen_display_dimensions(screen)
+        width = max(1, width)
+        height = max(1, height)
         screen_lines.append(
             f'var {comp_name} = app.project.items.addComp("{comp_name}", {width}, {height}, 1, 30, {project.frame_rate});'
         )
@@ -236,8 +339,7 @@ app.endUndoGroup();
 def write_c4d_script(project: ProjectCreate, screens: list[ScreenCreate], path: Path) -> None:
     screen_defs = []
     for screen in screens:
-        geometry = screen_geometry(screen)
-        bounds = geometry.bounds if geometry is not None else (screen.x, screen.y, screen.x + screen.width, screen.y + screen.height)
+        bounds = screen_bounds(screen)
         width = int(bounds[2] - bounds[0])
         height = int(bounds[3] - bounds[1])
         center_x = int(bounds[0] + width / 2)
@@ -298,8 +400,10 @@ def write_delivery_spec(project: ProjectCreate, screens: list[ScreenCreate], pat
         "## Screen List",
     ]
     for screen in screens:
+        size_text = screen_size_text(screen)
+        origin_text = screen_origin_text(screen)
         lines.append(
-            f"- {screen.screen_name}: {screen.surface_type}, {screen.x},{screen.y}, {screen.width}x{screen.height}, safe area {screen.safe_area_ratio}"
+            f"- {screen.screen_name}: {screen.surface_type}, {origin_text}, {size_text}, safe area {screen.safe_area_ratio}"
         )
     lines.extend(
         [
@@ -311,6 +415,102 @@ def write_delivery_spec(project: ProjectCreate, screens: list[ScreenCreate], pat
             project.onsite_notes or "Confirm processor routing, playback frame rate, and backup outputs onsite.",
         ]
     )
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def write_ae_readme(project: ProjectCreate, screens: list[ScreenCreate], path: Path) -> None:
+    lines = [
+        f"# After Effects Setup - {project.project_name}",
+        "",
+        "1. Open After Effects and run `create_project.jsx` from this folder.",
+        "2. Confirm the generated main comp matches the delivery resolution.",
+        "3. Use the imported pixel map and safe-area guide as guide layers only.",
+        "4. Render each screen precomp according to the delivery spec.",
+        "",
+        "## Screen Precomps",
+    ]
+    lines.extend(f"- {screen.screen_name}: {screen_size_text(screen)}" for screen in screens)
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def write_c4d_readme(project: ProjectCreate, screens: list[ScreenCreate], path: Path) -> None:
+    lines = [
+        f"# Cinema 4D Setup - {project.project_name}",
+        "",
+        "1. Open Cinema 4D and run `create_stage_scene.py` from the Script Manager.",
+        "2. Verify screen plane scale and camera framing against the pixel map.",
+        "3. Assign the numbered pixel map texture before camera or render adjustments.",
+        "",
+        "## Screen Planes",
+    ]
+    lines.extend(f"- {screen.screen_name}: {screen.surface_type}, {screen_size_text(screen)}" for screen in screens)
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def write_export_presets(project: ProjectCreate, path: Path) -> None:
+    payload = {
+        "project_name": project.project_name,
+        "resolution": {"width": project.output_width, "height": project.output_height},
+        "frame_rate": project.frame_rate,
+        "codec_requirement": project.codec_requirement,
+        "playback_software": project.playback_software,
+        "presets": [
+            {
+                "name": "Master delivery",
+                "container": "mov",
+                "codec": project.codec_requirement,
+                "pixel_format": "source",
+                "audio": "none unless specified",
+            },
+            {
+                "name": "H264 proxy",
+                "container": "mp4",
+                "codec": "h264",
+                "pixel_format": "yuv420p",
+                "audio": "aac",
+            },
+        ],
+    }
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def write_ffmpeg_proxy_commands(project: ProjectCreate, path: Path) -> None:
+    command = (
+        "ffmpeg -i 06_Export/master.mov "
+        f"-r {project.frame_rate} -s {project.output_width}x{project.output_height} "
+        "-c:v libx264 -pix_fmt yuv420p -crf 18 -preset medium "
+        "06_Export/proxy_h264.mp4"
+    )
+    path.write_text(command + "\n", encoding="utf-8")
+
+
+def write_onsite_runbook(project: ProjectCreate, screens: list[ScreenCreate], path: Path) -> None:
+    lines = [
+        f"# Onsite Runbook - {project.project_name}",
+        "",
+        "## Preflight",
+        "- Confirm output resolution and processor routing.",
+        "- Load the numbered pixel map and verify every physical surface.",
+        "- Confirm backup playback machine uses the same frame rate and codec.",
+        "",
+        "## Screen Checklist",
+    ]
+    lines.extend(f"- {screen.screen_name}: verify origin {screen.x},{screen.y} and safe area {screen.safe_area_ratio}" for screen in screens)
+    lines.extend(["", "## Notes", project.onsite_notes or "No onsite notes supplied."])
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def write_playback_spec(project: ProjectCreate, path: Path) -> None:
+    lines = [
+        f"# Playback Spec - {project.project_name}",
+        "",
+        f"- Playback software: {project.playback_software}",
+        f"- Codec: {project.codec_requirement}",
+        f"- Resolution: {project.output_width} x {project.output_height}",
+        f"- Frame rate: {project.frame_rate}fps",
+        "- Audio: confirm per show file",
+        "- File naming: PROJECT_SCREEN_VERSION_CODEC_RESOLUTION.ext",
+    ]
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -327,35 +527,26 @@ def generate_project_package(
     screens: list[ScreenCreate],
     output_root: Path,
 ) -> list[Artifact]:
-    project_root = output_root / slugify(project.project_name)
+    project_root = project_package_root(project, output_root)
     for dirname in PROJECT_DIRS:
         (project_root / dirname).mkdir(parents=True, exist_ok=True)
 
-    def artifact(label: str, path: Path, kind: str) -> Artifact:
-        return Artifact(label=label, path=path.as_posix(), kind=kind)
+    write_qc_report(project, screens, project_root / "01_Analysis" / "qc_report.md")
+    write_screen_spec(project, screens, project_root / "02_ScreenSpec" / "screen_spec.md")
+    write_screen_spec_json(project, screens, project_root / "02_ScreenSpec" / "screen_spec.json")
+    draw_pixel_map(project, screens, project_root / "03_PixelMap" / "project_pixelmap_full.png")
+    draw_pixel_map(project, screens, project_root / "03_PixelMap" / "project_pixelmap_numbered.png", numbered=True)
+    draw_pixel_map(project, screens, project_root / "03_PixelMap" / "project_pixelmap_safearea.png", safe_area=True)
+    write_svg_mask(project, screens, project_root / "03_PixelMap" / "project_pixelmap_mask.svg")
+    write_mapping_json(project, screens, project_root / "03_PixelMap" / "project_mapping.json")
+    write_ae_readme(project, screens, project_root / "04_AE" / "README_AE.md")
+    write_ae_jsx(project, screens, project_root / "04_AE" / "create_project.jsx")
+    write_c4d_readme(project, screens, project_root / "05_C4D" / "README_C4D.md")
+    write_c4d_script(project, screens, project_root / "05_C4D" / "create_stage_scene.py")
+    write_export_presets(project, project_root / "06_Export" / "export_presets.json")
+    write_ffmpeg_proxy_commands(project, project_root / "06_Export" / "ffmpeg_proxy_commands.txt")
+    write_delivery_spec(project, screens, project_root / "07_Onsite" / "delivery_spec.md")
+    write_onsite_runbook(project, screens, project_root / "07_Onsite" / "onsite_runbook.md")
+    write_playback_spec(project, project_root / "07_Onsite" / "playback_spec.md")
 
-    artifacts = [
-        artifact("QC report", project_root / "01_Analysis" / "qc_report.md", "markdown"),
-        artifact("Screen spec", project_root / "02_ScreenSpec" / "screen_spec.md", "markdown"),
-        artifact("Full pixel map", project_root / "03_PixelMap" / "project_pixelmap_full.png", "png"),
-        artifact("Numbered pixel map", project_root / "03_PixelMap" / "project_pixelmap_numbered.png", "png"),
-        artifact("Safe area pixel map", project_root / "03_PixelMap" / "project_pixelmap_safearea.png", "png"),
-        artifact("SVG mask", project_root / "03_PixelMap" / "project_pixelmap_mask.svg", "svg"),
-        artifact("Mapping JSON", project_root / "03_PixelMap" / "project_mapping.json", "json"),
-        artifact("AE JSX script", project_root / "04_AE" / "create_project.jsx", "jsx"),
-        artifact("C4D Python script", project_root / "05_C4D" / "create_stage_scene.py", "python"),
-        artifact("Delivery spec", project_root / "07_Onsite" / "delivery_spec.md", "markdown"),
-    ]
-
-    write_qc_report(project, screens, Path(artifacts[0].path))
-    write_screen_spec(project, screens, Path(artifacts[1].path))
-    draw_pixel_map(project, screens, Path(artifacts[2].path))
-    draw_pixel_map(project, screens, Path(artifacts[3].path), numbered=True)
-    draw_pixel_map(project, screens, Path(artifacts[4].path), safe_area=True)
-    write_svg_mask(project, screens, Path(artifacts[5].path))
-    write_mapping_json(project, screens, Path(artifacts[6].path))
-    write_ae_jsx(project, screens, Path(artifacts[7].path))
-    write_c4d_script(project, screens, Path(artifacts[8].path))
-    write_delivery_spec(project, screens, Path(artifacts[9].path))
-
-    return artifacts
+    return list_project_artifacts(project_root)

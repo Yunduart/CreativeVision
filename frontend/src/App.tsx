@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clapperboard,
+  Download,
   FileCode2,
   FolderTree,
   Gauge,
@@ -14,6 +15,7 @@ import {
 } from "lucide-react";
 
 import { api, Artifact, Project, ProjectInput, QCResult, Screen, ScreenInput } from "./api";
+import { formatCreatedAt, formatFileSize, formatFrameRate } from "./formatters";
 import { defaultLanguage, LanguageCode, languages, makeCopy } from "./i18n";
 import { StagePreview } from "./StagePreview";
 
@@ -107,9 +109,14 @@ export function App() {
   }
 
   async function loadProjectDetail(projectId: number) {
-    const [nextScreens, nextQc] = await Promise.all([api.listScreens(projectId), api.getQc(projectId)]);
+    const [nextScreens, nextQc, nextArtifacts] = await Promise.all([
+      api.listScreens(projectId),
+      api.getQc(projectId),
+      api.listArtifacts(projectId),
+    ]);
     setScreens(nextScreens);
     setQc(nextQc);
+    setArtifacts(nextArtifacts);
   }
 
   useEffect(() => {
@@ -131,6 +138,7 @@ export function App() {
       const nextProjects = await api.listProjects();
       setProjects(nextProjects);
       setActiveId(project.id);
+      await loadProjectDetail(project.id);
       setStatus(copy.createdProject(project.project_name));
     } catch (error) {
       setStatus(error instanceof Error ? error.message : copy.createProjectFailed);
@@ -167,6 +175,7 @@ export function App() {
       setQc(result.qc);
       const nextProjects = await api.listProjects();
       setProjects(nextProjects);
+      await loadProjectDetail(activeProject.id);
       setStatus(copy.generatedFiles(result.artifacts.length, result.project.output_path));
     } catch (error) {
       setStatus(error instanceof Error ? error.message : copy.generationFailed);
@@ -202,7 +211,7 @@ export function App() {
               onClick={() => setActiveId(project.id)}
             >
               <span>{project.project_name}</span>
-              <small>{project.output_width} x {project.output_height} / {project.frame_rate}fps</small>
+              <small>{project.output_width} x {project.output_height} / {formatFrameRate(project.frame_rate)}</small>
             </button>
           ))}
         </div>
@@ -366,6 +375,19 @@ export function App() {
               {qc?.passed ? <CheckCircle2 size={22} /> : <AlertTriangle size={22} />}
               <span>{qc ? (qc.passed ? copy.allChecksPassed : copy.issueFound(qc.issues.length)) : copy.qcNotRun}</span>
             </div>
+            <div className="check-list" aria-label={copy.qcChecklist}>
+              {qc?.checks?.length ? (
+                qc.checks.map((check) => (
+                  <div className={`check-row ${check.passed ? "pass" : check.severity}`} key={check.code}>
+                    {check.passed ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+                    <div>
+                      <strong>{check.label}</strong>
+                      <span>{check.message}</span>
+                    </div>
+                  </div>
+                ))
+              ) : null}
+            </div>
             <div className="issue-list">
               {qc?.issues.length ? (
                 qc.issues.map((issue, index) => (
@@ -389,14 +411,39 @@ export function App() {
               <FileCode2 size={18} />
               <h3>{copy.generatedArtifacts}</h3>
             </div>
-            <div className="artifact-list">
+            {activeProject && artifacts.length ? (
+              <a className="download-link package-download" href={api.packageZipUrl(activeProject.id)}>
+                <Download size={16} />
+                {copy.downloadZip}
+              </a>
+            ) : null}
+            <div className="artifact-table" role="table" aria-label={copy.generatedArtifacts}>
               {artifacts.length ? (
-                artifacts.map((artifact) => (
-                  <div className="artifact" key={artifact.path}>
-                    <span>{copy.artifactLabels[artifact.label] ?? artifact.label}</span>
-                    <code>{artifact.path}</code>
+                <>
+                  <div className="artifact-row artifact-header" role="row">
+                    <span>{copy.artifactLabel}</span>
+                    <span>{copy.artifactType}</span>
+                    <span>{copy.artifactPath}</span>
+                    <span>{copy.artifactSize}</span>
+                    <span>{copy.artifactCreated}</span>
+                    <span>{copy.artifactAction}</span>
                   </div>
-                ))
+                  {artifacts.map((artifact) => (
+                    <div className="artifact-row" role="row" key={artifact.relative_path}>
+                      <strong>{copy.artifactLabels[artifact.label] ?? artifact.label}</strong>
+                      <span>{artifact.kind}</span>
+                      <code>{artifact.relative_path}</code>
+                      <span>{formatFileSize(artifact.size_bytes)}</span>
+                      <span>{formatCreatedAt(artifact.created_at)}</span>
+                      {activeProject ? (
+                        <a className="download-link" href={api.artifactDownloadUrl(activeProject.id, artifact.relative_path)}>
+                          <Download size={14} />
+                          {copy.download}
+                        </a>
+                      ) : null}
+                    </div>
+                  ))}
+                </>
               ) : (
                 <p className="muted">{copy.artifactEmpty}</p>
               )}

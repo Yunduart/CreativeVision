@@ -49,8 +49,17 @@ class QCIssue(BaseModel):
     screen_name: str | None = None
 
 
+class QCCheck(BaseModel):
+    code: str
+    label: str
+    passed: bool
+    severity: Literal["info", "warning", "error"]
+    message: str
+
+
 class QCResult(BaseModel):
     passed: bool
+    checks: list[QCCheck]
     issues: list[QCIssue]
 
 
@@ -58,6 +67,9 @@ class Artifact(BaseModel):
     label: str
     path: str
     kind: str
+    relative_path: str
+    created_at: str
+    size_bytes: int
 
 
 class GenerateResult(BaseModel):

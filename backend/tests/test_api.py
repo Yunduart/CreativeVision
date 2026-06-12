@@ -1,4 +1,5 @@
 from pathlib import Path
+import zipfile
 
 from fastapi.testclient import TestClient
 
@@ -79,17 +80,71 @@ def test_qc_and_generation_routes(tmp_path: Path):
     project = client.post("/projects", json=project_payload()).json()
     client.post(f"/projects/{project['id']}/screens", json=screen_payload())
 
+    missing_zip_response = client.get(f"/projects/{project['id']}/package.zip")
+    assert missing_zip_response.status_code == 409
+
     qc_response = client.get(f"/projects/{project['id']}/qc")
     assert qc_response.status_code == 200
-    assert qc_response.json()["passed"] is True
+    qc_payload = qc_response.json()
+    assert qc_payload["passed"] is True
+    assert {check["code"] for check in qc_payload["checks"]} >= {
+        "CANVAS_DIMENSIONS_VALID",
+        "CANVAS_DIMENSIONS_EVEN",
+        "FRAME_RATE_VALID",
+    }
 
     generate_response = client.post(f"/projects/{project['id']}/generate")
     assert generate_response.status_code == 200
     payload = generate_response.json()
     artifact_paths = [artifact["path"] for artifact in payload["artifacts"]]
+    artifact_relative_paths = [artifact["relative_path"] for artifact in payload["artifacts"]]
 
     assert payload["qc"]["passed"] is True
     assert any(path.endswith("03_PixelMap/project_pixelmap_full.png") for path in artifact_paths)
     assert any(path.endswith("04_AE/create_project.jsx") for path in artifact_paths)
     assert any(path.endswith("05_C4D/create_stage_scene.py") for path in artifact_paths)
+    assert "02_ScreenSpec/screen_spec.json" in artifact_relative_paths
+    assert "04_AE/README_AE.md" in artifact_relative_paths
+    assert "05_C4D/README_C4D.md" in artifact_relative_paths
+    assert "06_Export/export_presets.json" in artifact_relative_paths
+    assert "06_Export/ffmpeg_proxy_commands.txt" in artifact_relative_paths
+    assert "07_Onsite/onsite_runbook.md" in artifact_relative_paths
+    assert "07_Onsite/playback_spec.md" in artifact_relative_paths
+    assert all(artifact["created_at"] for artifact in payload["artifacts"])
+    assert all(artifact["size_bytes"] > 0 for artifact in payload["artifacts"])
     assert (tmp_path / "exports" / "API_Demo" / "07_Onsite" / "delivery_spec.md").is_file()
+
+    artifacts_response = client.get(f"/projects/{project['id']}/artifacts")
+    assert artifacts_response.status_code == 200
+    assert {artifact["relative_path"] for artifact in artifacts_response.json()} == set(artifact_relative_paths)
+
+    zip_response = client.get(f"/projects/{project['id']}/package.zip")
+    assert zip_response.status_code == 200
+    zip_path = tmp_path / "package.zip"
+    zip_path.write_bytes(zip_response.content)
+    with zipfile.ZipFile(zip_path) as package_zip:
+        names = set(package_zip.namelist())
+    assert "API_Demo/00_Input/" in names
+    assert "API_Demo/02_ScreenSpec/screen_spec.json" in names
+    assert "API_Demo/06_Export/export_presets.json" in names
+    assert "API_Demo/07_Onsite/playback_spec.md" in names
+
+
+def test_artifact_downloads_do_not_use_stale_same_slug_directory_before_generation(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = client.post("/projects", json=project_payload()).json()
+    client.post(f"/projects/{project['id']}/screens", json=screen_payload())
+
+    stale_root = tmp_path / "exports" / "API_Demo"
+    stale_artifact = stale_root / "01_Analysis" / "qc_report.md"
+    stale_artifact.parent.mkdir(parents=True)
+    stale_artifact.write_text("stale package", encoding="utf-8")
+
+    artifacts_response = client.get(f"/projects/{project['id']}/artifacts")
+    zip_response = client.get(f"/projects/{project['id']}/package.zip")
+    artifact_response = client.get(f"/projects/{project['id']}/artifacts/01_Analysis/qc_report.md")
+
+    assert artifacts_response.status_code == 200
+    assert artifacts_response.json() == []
+    assert zip_response.status_code == 409
+    assert artifact_response.status_code == 409
