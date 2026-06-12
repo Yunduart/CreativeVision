@@ -18,6 +18,7 @@ import { api, Artifact, Project, ProjectInput, QCResult, Screen, ScreenInput } f
 import { formatCreatedAt, formatFileSize, formatFrameRate } from "./formatters";
 import { defaultLanguage, LanguageCode, languages, makeCopy } from "./i18n";
 import { StagePreview } from "./StagePreview";
+import { screenBounds } from "./stageGeometry";
 
 const defaultProject: ProjectInput = {
   project_name: "Graduation Stage Mapping Demo",
@@ -88,7 +89,10 @@ export function App() {
   const [polygonDraft, setPolygonDraft] = useState("");
   const [status, setStatus] = useState(copy.loadingWorkspace);
   const [busy, setBusy] = useState(false);
+  const [selectedScreenId, setSelectedScreenId] = useState<number | null>(null);
+  const [staleProjectIds, setStaleProjectIds] = useState<Set<number>>(() => new Set());
   const { activeProject, setActiveId } = useActiveProject(projects);
+  const packageStale = Boolean(activeProject && staleProjectIds.has(activeProject.id));
 
   useEffect(() => {
     window.localStorage.setItem("vj-os.language", language);
@@ -130,6 +134,16 @@ export function App() {
     });
   }, [activeProject?.id]);
 
+  useEffect(() => {
+    if (!screens.length) {
+      setSelectedScreenId(null);
+      return;
+    }
+    if (!screens.some((screen) => screen.id === selectedScreenId)) {
+      setSelectedScreenId(screens[0].id);
+    }
+  }, [screens, selectedScreenId]);
+
   async function createProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
@@ -156,11 +170,34 @@ export function App() {
         ...screenForm,
         polygon_points: screenForm.surface_type === "polygon" ? parsePolygonPoints(polygonDraft) : [],
       };
-      await api.createScreen(activeProject.id, payload);
+      const screen = await api.createScreen(activeProject.id, payload);
+      if (activeProject.output_path || artifacts.length) {
+        setStaleProjectIds((current) => new Set(current).add(activeProject.id));
+      }
       await loadProjectDetail(activeProject.id);
+      setSelectedScreenId(screen.id);
       setStatus(copy.addedScreen(payload.screen_name));
     } catch (error) {
       setStatus(error instanceof Error ? error.message : copy.addScreenFailed);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function updateScreen(screen: Screen) {
+    if (!activeProject) return;
+    setBusy(true);
+    try {
+      const { id, project_id: _projectId, ...payload } = screen;
+      const updated = await api.updateScreen(activeProject.id, id, payload);
+      if (activeProject.output_path || artifacts.length) {
+        setStaleProjectIds((current) => new Set(current).add(activeProject.id));
+      }
+      await loadProjectDetail(activeProject.id);
+      setSelectedScreenId(updated.id);
+      setStatus(copy.updatedScreen(updated.screen_name));
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : copy.updateScreenFailed);
     } finally {
       setBusy(false);
     }
@@ -173,6 +210,11 @@ export function App() {
       const result = await api.generate(activeProject.id);
       setArtifacts(result.artifacts);
       setQc(result.qc);
+      setStaleProjectIds((current) => {
+        const next = new Set(current);
+        next.delete(activeProject.id);
+        return next;
+      });
       const nextProjects = await api.listProjects();
       setProjects(nextProjects);
       await loadProjectDetail(activeProject.id);
@@ -255,6 +297,11 @@ export function App() {
           project={activeProject}
           screens={screens}
           qc={qc}
+          selectedScreenId={selectedScreenId}
+          packageStale={packageStale}
+          saving={busy}
+          onSelectScreen={setSelectedScreenId}
+          onSaveScreen={updateScreen}
           copy={{
             title: copy.stagePreview,
             outputCanvas: copy.outputCanvas,
@@ -262,6 +309,25 @@ export function App() {
             safeArea: copy.safeArea,
             qcIssue: copy.qcIssue,
             screenSurfaceCount: copy.screenSurfaceCount,
+            zoomIn: copy.zoomIn,
+            zoomOut: copy.zoomOut,
+            resetView: copy.resetView,
+            fitCanvas: copy.fitCanvas,
+            exportPreviewPng: copy.exportPreviewPng,
+            showGrid: copy.showGrid,
+            showSafeArea: copy.showSafeArea,
+            showScreenNumbers: copy.showScreenNumbers,
+            showCoordinates: copy.showCoordinates,
+            showDimensions: copy.showDimensions,
+            showLabels: copy.showLabels,
+            selectedScreen: copy.selectedScreen,
+            noScreenSelected: copy.noScreenSelected,
+            origin: copy.origin,
+            dimensions: copy.dimensions,
+            polygonBounds: copy.polygonBounds,
+            saveEdits: copy.saveEdits,
+            cancelEdits: copy.cancelEdits,
+            packageStale: copy.packageStale,
           }}
         />
 
@@ -411,6 +477,12 @@ export function App() {
               <FileCode2 size={18} />
               <h3>{copy.generatedArtifacts}</h3>
             </div>
+            {packageStale ? (
+              <div className="stale-banner">
+                <AlertTriangle size={16} />
+                <span>{copy.packageStale}</span>
+              </div>
+            ) : null}
             {activeProject && artifacts.length ? (
               <a className="download-link package-download" href={api.packageZipUrl(activeProject.id)}>
                 <Download size={16} />
@@ -457,16 +529,24 @@ export function App() {
             <h3>{copy.screenSurfaces}</h3>
           </div>
           <div className="screen-table">
-            {screens.map((screen) => (
-              <div className="screen-row" key={screen.id}>
-                <strong>{screen.screen_name}</strong>
-                <span>{screen.surface_type}</span>
-                <span>{screen.x}, {screen.y}</span>
-                <span>{screen.width} x {screen.height}</span>
-                <span>{copy.safePrefix} {screen.safe_area_ratio}</span>
-                <small>{screen.notes}</small>
-              </div>
-            ))}
+            {screens.map((screen) => {
+              const bounds = screenBounds(screen);
+              return (
+                <button
+                  className={`screen-row ${selectedScreenId === screen.id ? "active" : ""}`}
+                  key={screen.id}
+                  type="button"
+                  onClick={() => setSelectedScreenId(screen.id)}
+                >
+                  <strong>{screen.screen_name}</strong>
+                  <span>{screen.surface_type}</span>
+                  <span>{Math.round(bounds.minX)}, {Math.round(bounds.minY)}</span>
+                  <span>{Math.round(bounds.width)} x {Math.round(bounds.height)}</span>
+                  <span>{copy.safePrefix} {screen.safe_area_ratio}</span>
+                  <small>{screen.notes}</small>
+                </button>
+              );
+            })}
           </div>
         </section>
       </main>

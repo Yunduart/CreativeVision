@@ -85,7 +85,8 @@ button {
 .ghost-button,
 .primary-button,
 .project-button,
-.download-link {
+.download-link,
+.icon-button {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -100,6 +101,11 @@ button {
 .ghost-button {
   width: 100%;
   justify-content: center;
+}
+
+.ghost-button.compact {
+  width: auto;
+  padding: 0 12px;
 }
 
 .primary-button {
@@ -119,13 +125,27 @@ button {
   padding: 4px 8px;
 }
 
+.icon-button {
+  justify-content: center;
+  width: 38px;
+  min-height: 38px;
+  color: #dbeafe;
+  padding: 0;
+}
+
+.icon-button:hover {
+  border-color: rgba(34, 211, 238, 0.45);
+  color: #67e8f9;
+}
+
 .package-download {
   width: max-content;
   margin-bottom: 10px;
 }
 
 .primary-button:disabled,
-.ghost-button:disabled {
+.ghost-button:disabled,
+.icon-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
@@ -407,13 +427,64 @@ code {
 }
 
 .stage-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.035);
   padding: 6px 8px;
 }
 
+.stage-meta .stage-stale,
+.stale-banner {
+  border-color: rgba(250, 204, 21, 0.35);
+  background: rgba(250, 204, 21, 0.08);
+  color: #facc15;
+}
+
+.canvas-toolbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  margin-bottom: 12px;
+}
+
+.icon-button-group,
+.editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.canvas-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.canvas-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  color: #cbd5e1;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.canvas-toggle input {
+  width: 14px;
+  min-height: 14px;
+  accent-color: #19bfd6;
+}
+
 .stage-canvas-shell {
+  position: relative;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
@@ -424,6 +495,79 @@ code {
   display: block;
   width: 100%;
   max-height: 420px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.stage-canvas.panning {
+  cursor: grabbing;
+}
+
+.canvas-grid line {
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.selected-screen polygon:first-child {
+  filter: drop-shadow(0 0 10px rgba(250, 204, 21, 0.55));
+}
+
+.resize-handle,
+.vertex-handle {
+  cursor: grab;
+}
+
+.stage-tooltip {
+  position: absolute;
+  z-index: 5;
+  display: grid;
+  gap: 4px;
+  max-width: min(280px, calc(100% - 24px));
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  border-radius: 8px;
+  background: rgba(2, 6, 12, 0.96);
+  color: #e6edf5;
+  padding: 10px;
+  pointer-events: none;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.stage-tooltip span,
+.stage-tooltip small {
+  color: #a8b3c2;
+  font-size: 12px;
+}
+
+.stage-editor {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  padding: 12px;
+}
+
+.stage-editor h4 {
+  margin: 0 0 6px;
+  color: #8d99a8;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.stage-editor div:first-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.stage-editor span {
+  color: #a8b3c2;
+  font-size: 12px;
 }
 
 .stage-legend {
@@ -438,10 +582,18 @@ code {
   grid-template-columns: auto auto minmax(0, 1fr);
   gap: 4px 8px;
   align-items: center;
+  color: #f4f7fb;
+  text-align: left;
 }
 
 .stage-legend-item.issue {
   border-color: rgba(251, 113, 133, 0.35);
+}
+
+.stage-legend-item.active,
+.screen-row.active {
+  border-color: rgba(250, 204, 21, 0.42);
+  background: rgba(250, 204, 21, 0.08);
 }
 
 .stage-legend-item.issue svg,
@@ -482,6 +634,19 @@ code {
   grid-template-columns: minmax(180px, 1.2fr) repeat(4, minmax(110px, 0.7fr)) minmax(220px, 1.4fr);
   gap: 10px;
   align-items: center;
+  width: 100%;
+  color: #f4f7fb;
+  text-align: left;
+}
+
+.stale-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  margin-bottom: 10px;
+  border-radius: 8px;
+  padding: 8px 10px;
 }
 
 @media (max-width: 1180px) {

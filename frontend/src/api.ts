@@ -106,6 +106,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  updateScreen: (projectId: number, screenId: number, payload: ScreenInput) =>
+    request<Screen>(`/projects/${projectId}/screens/${screenId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
   getQc: (projectId: number) => request<QCResult>(`/projects/${projectId}/qc`),
   listArtifacts: (projectId: number) => request<Artifact[]>(`/projects/${projectId}/artifacts`),
   generate: (projectId: number) =>

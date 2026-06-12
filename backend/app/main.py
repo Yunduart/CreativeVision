@@ -134,6 +134,30 @@ def create_app(
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    @app.patch("/projects/{project_id}/screens/{screen_id}", response_model=ScreenRecord)
+    def update_screen(project_id: int, screen_id: int, payload: ScreenCreate) -> ScreenRecord:
+        project = get_project_or_404(project_id)
+        screens = get_screens_or_404(project_id)
+        if not any(screen.id == screen_id for screen in screens):
+            raise HTTPException(status_code=404, detail=f"Screen {screen_id} not found")
+
+        candidate = ScreenRecord(id=screen_id, project_id=project_id, **payload.model_dump())
+        next_screens = [candidate if screen.id == screen_id else screen for screen in screens]
+        qc = run_qc(project, next_screens)
+        if not qc.passed:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": "Screen update failed QC validation.",
+                    "issues": [issue.model_dump() for issue in qc.issues if issue.severity == "error"],
+                },
+            )
+
+        try:
+            return database.update_screen(project_id, screen_id, payload)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
     @app.get("/projects/{project_id}/qc", response_model=QCResult)
     def project_qc(project_id: int) -> QCResult:
         project = get_project_or_404(project_id)
